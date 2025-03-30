@@ -1,9 +1,10 @@
 const express = require("express");
 const { getPool } = require("../db/dbUtils.js");
 const sql = require("mssql");
+const nodemailer = require("nodemailer");
 const router = express.Router();
 
-router.post("/:change", async (req, res) => {
+router.post("/change", async (req, res) => {
   try {
     const { password, new_password, user_id } = req.body;
     const missingFields = [];
@@ -60,13 +61,38 @@ router.post("/:change", async (req, res) => {
       .json({ succuss: false, error_msg: "Internal server error." });
   }
 });
-router.post("/:reset", async (req, res) => {
+router.post("/reset", async (req, res) => {
   const email = req.body.email;
   if (!email) {
     return res
       .status(400)
       .json({ success: false, error_msg: "Email is required." });
   }
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // use SSL
+    auth: {
+      user: "kandabiadir@gmail.com",
+      pass: "dmqltboslazgzmwx",
+    },
+  });
+  const mailOptions = {
+    from: "noreplay@comunication-ltd.com",
+    to: email,
+    subject: `Test`,
+    text: `
+        reset password testing
+      `,
+  };
+
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error("Error while sending email:", error);
+      return res.status(500).send(error.toString());
+    }
+    res.status(200).send("Email sent: " + info.response);
+  });
 });
 
 router.post("/", async (req, res) => {
