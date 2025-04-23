@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const sql = require("mssql");
 const { getPool } = require("../db/dbUtils.js");
 const router = express.Router();
+const { generateSalt, hashPassword } = require("../utils/auth.js");
 
 router.post("/", async (req, res) => {
   try {
@@ -20,7 +21,7 @@ router.post("/", async (req, res) => {
         error: "missing parameters: " + missingParameters.join(","),
       });
     }
-    const pool = await getPool(); // Reuse the existing pool
+    const pool = req.app.locals.dbPool;
     if (!pool) {
       return res
         .status(500)
@@ -53,6 +54,9 @@ async function insertToDB(userInput, pool) {
     const hash = crypto.createHash("sha256"); // Using SHA-256 hash function
     hash.update(userInput.username + userInput.email);
     const userGuid = hash.digest("hex");
+    const salt = generateSalt();
+    const secretKey = process.env.SECRET_KEY;
+    const hashedPassword = hashPassword(userInput.password, salt, secretKey);
     // Insert the new user into the database
 
     const result = await pool
@@ -62,10 +66,10 @@ async function insertToDB(userInput, pool) {
       .input("last_name", sql.NVarChar, userInput.last_name)
       .input("username", sql.NVarChar, userInput.username)
       .input("email", sql.NVarChar, userInput.email)
-      .input("password", sql.NVarChar, userInput.password) // Store the hashed password
-      .query(`
-     INSERT INTO Users (user_id,first_name, last_name, username, email, password)
-     VALUES (@user_id,@first_name, @last_name, @username, @email, @password)
+      .input("password", sql.NVarChar, hashedPassword) // Store the hashed password
+      .input("salt", sql.NVarChar, salt).query(`
+     INSERT INTO Users (user_id,first_name, last_name, username, email, password,salt)
+     VALUES (@user_id,@first_name, @last_name, @username, @email, @password,@salt)
    `);
 
     return true;

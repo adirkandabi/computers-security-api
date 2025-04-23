@@ -18,7 +18,7 @@ router.post("/change", async (req, res) => {
         error_msg: "Missing parameter: " + missingFields.join(","),
       });
     }
-    const pool = req.dbPool;
+    const pool = req.app.locals.dbPool;
     const user = await validateUser(user_id, pool);
 
     if (user === null) {
@@ -70,7 +70,7 @@ router.post("/reset", async (req, res) => {
       .json({ success: false, error_msg: "Email is required." });
   }
 
-  const pool = req.dbPool;
+  const pool = req.app.locals.dbPool;
 
   const user = await validateUser(email, pool);
   if (user === null) {
@@ -148,7 +148,7 @@ router.post("/verify", async (req, res) => {
       error_msg: "Missing fields: " + missingFields.join(", "),
     });
   }
-  const pool = req.dbPool;
+  const pool = req.app.locals.dbPool;
   const isCodeVerified = await verifyCode(user_id, code, pool);
   console.log(isCodeVerified);
 

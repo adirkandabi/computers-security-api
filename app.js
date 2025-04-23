@@ -12,10 +12,10 @@ const app = express();
 // Middleware to parse incoming requests with JSON payloads
 app.use(express.json());
 
-app.use((req, res, next) => {
-  req.dbPool = app.locals.dbPool;
-  next();
-});
+// app.use((req, res, next) => {
+//   req.dbPool = app.locals.dbPool;
+//   next();
+// });
 // Use routes for API endpoint
 app.use("/api", routes);
 
