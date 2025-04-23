@@ -4,6 +4,7 @@ const sql = require("mssql");
 const nodemailer = require("nodemailer");
 const router = express.Router();
 const crypto = require("crypto");
+const { generateSalt, hashPassword } = require("../utils/auth.js");
 
 router.post("/change", async (req, res) => {
   try {
@@ -31,17 +32,28 @@ router.post("/change", async (req, res) => {
         .status(404)
         .json({ succuss: false, error_msg: "User not found." });
     } else {
-      if (user[0]["password"] !== password) {
+      const secretKey = process.env.SECRET_KEY;
+      const hashedOldPassword = hashPassword(
+        password,
+        user[0]["salt"],
+        secretKey
+      );
+      const hashedNewPassword = hashPassword(
+        new_password,
+        user[0]["salt"],
+        secretKey
+      );
+      if (user[0]["password"] !== hashedOldPassword) {
         return res
           .status(400)
           .json({ succuss: false, error_msg: "Incorrect old password." });
-      } else if (user[0]["password"] === new_password) {
+      } else if (user[0]["password"] === hashedNewPassword) {
         return res.status(400).json({
           success: false,
           error_msg: "Current password and new password are the same.",
         });
       } else {
-        const result = await changePassword(user_id, new_password, pool);
+        const result = await changePassword(user_id, hashedNewPassword, pool);
         if (result) {
           return res.status(200).json({ succuss: true });
         } else if (result === false) {
