@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-
+const sql = require("mssql");
 function generateSalt(length = 16) {
   return crypto.randomBytes(length).toString("hex");
 }
@@ -10,8 +10,29 @@ function hashPassword(password, salt, secretKey) {
     .update(password + salt)
     .digest("hex");
 }
-
+async function validateUser(idOrEmail, pool) {
+  try {
+    let result;
+    // Check if it contains @ to determine if it's an email
+    if (idOrEmail.includes("@")) {
+      result = await pool
+        .request()
+        .input("email", sql.NVarChar, idOrEmail)
+        .query("SELECT * FROM Users WHERE email=@email");
+    } else {
+      result = await pool
+        .request()
+        .input("userId", sql.NVarChar, idOrEmail)
+        .query("SELECT * FROM Users WHERE user_id=@userId");
+    }
+    return result.recordset;
+  } catch (err) {
+    console.log(err);
+    return null;
+  }
+}
 module.exports = {
   generateSalt,
   hashPassword,
+  validateUser,
 };
