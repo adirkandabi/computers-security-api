@@ -3,7 +3,11 @@ const sql = require("mssql");
 function generateSalt(length = 16) {
   return crypto.randomBytes(length).toString("hex");
 }
-
+function createGuid(input) {
+  const hash = crypto.createHash("sha256"); // Using SHA-256 hash function
+  hash.update(input);
+  return hash.digest("hex");
+}
 function hashPassword(password, salt, secretKey) {
   return crypto
     .createHmac("sha256", secretKey)
@@ -35,4 +39,5 @@ module.exports = {
   generateSalt,
   hashPassword,
   validateUser,
+  createGuid,
 };

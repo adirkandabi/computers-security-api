@@ -2,20 +2,19 @@ require("dotenv").config();
 const express = require("express");
 const routes = require("./routers/index.js");
 const db = require("./db/db");
+const cors = require("cors");
 
 const app = express();
 
 (async () => {
   app.locals.dbPool = await db.getPool(); // Store the connection in app.locals
 })();
+// Enable CORS for all origins
+app.use(cors());
 
 // Middleware to parse incoming requests with JSON payloads
 app.use(express.json());
 
-// app.use((req, res, next) => {
-//   req.dbPool = app.locals.dbPool;
-//   next();
-// });
 // Use routes for API endpoint
 app.use("/api", routes);
 
