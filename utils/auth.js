@@ -1,5 +1,11 @@
 const crypto = require("crypto");
 const sql = require("mssql");
+const fs = require("fs");
+
+function getPasswordPolicy() {
+  const config = fs.readFileSync("./passwordPolicy.config.json", "utf-8");
+  return JSON.parse(config);
+}
 function generateSalt(length = 16) {
   return crypto.randomBytes(length).toString("hex");
 }
@@ -40,4 +46,5 @@ module.exports = {
   hashPassword,
   validateUser,
   createGuid,
+  getPasswordPolicy,
 };

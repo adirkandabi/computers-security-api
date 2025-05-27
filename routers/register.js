@@ -3,7 +3,12 @@ const crypto = require("crypto");
 const sql = require("mssql");
 const { getPool } = require("../db/dbUtils.js");
 const router = express.Router();
-const { generateSalt, hashPassword, createGuid } = require("../utils/auth.js");
+const {
+  generateSalt,
+  hashPassword,
+  createGuid,
+  getPasswordPolicy,
+} = require("../utils/auth.js");
 
 router.post("/", async (req, res) => {
   try {
@@ -39,6 +44,29 @@ router.post("/", async (req, res) => {
         error: "Internal server error",
       });
     }
+    const policy = getPasswordPolicy();
+    let passwordError = "";
+    if (password.length < policy.minLength) {
+      passwordError = `Password must be at least ${policy.minLength} characters long.`;
+    } else if (policy.requireUppercase && !/[A-Z]/.test(password)) {
+      passwordError = "Password must contain at least one uppercase letter.";
+    } else if (policy.requireLowercase && !/[a-z]/.test(password)) {
+      passwordError = "Password must contain at least one lowercase letter.";
+    } else if (policy.requireNumbers && !/[0-9]/.test(password)) {
+      passwordError = "Password must contain at least one number.";
+    } else if (policy.requireSpecialChars && !/[^a-zA-Z0-9]/.test(password)) {
+      passwordError = "Password must contain at least one special character.";
+    } else if (
+      policy.dictionaryBlocklist.some((bad) => password.includes(bad))
+    ) {
+      passwordError = "Password contains a blocked word or phrase.";
+    }
+    if (passwordError) {
+      return res.status(400).json({
+        success: false,
+        error: passwordError,
+      });
+    }
     const result = await insertToDB(req.body, pool);
     res.status(result ? 200 : 500).json({
       success: result,
@@ -49,6 +77,7 @@ router.post("/", async (req, res) => {
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
+
 async function insertToDB(userInput, pool) {
   try {
     const userGuid = createGuid(userInput.username + userInput.email);
@@ -69,7 +98,13 @@ async function insertToDB(userInput, pool) {
      INSERT INTO Users (user_id,first_name, last_name, username, email, password,salt)
      VALUES (@user_id,@first_name, @last_name, @username, @email, @password,@salt)
    `);
-
+    const result2 = await pool
+      .request()
+      .input("user_id", sql.NVarChar, userGuid)
+      .input("password_hash", sql.NVarChar, hashedPassword)
+      .input("salt", sql.NVarChar, salt).query(`
+     INSERT INTO PasswordHistory (user_id, password_hash,salt)
+     VALUES (@user_id,@password_hash,@salt)`);
     return true;
   } catch (err) {
     console.log("❌ Error registering user:", err);

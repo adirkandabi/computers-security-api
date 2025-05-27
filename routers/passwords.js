@@ -1,10 +1,22 @@
 const express = require("express");
 const sql = require("mssql");
 const router = express.Router();
-const { hashPassword, validateUser } = require("../utils/auth.js");
+const {
+  hashPassword,
+  validateUser,
+  getPasswordPolicy,
+} = require("../utils/auth.js");
 
+router.get("/policy", (req, res) => {
+  const policy = getPasswordPolicy();
+  return res.status(200).json({
+    success: true,
+    policy,
+  });
+});
 router.post("/change", async (req, res) => {
   try {
+    const policy = getPasswordPolicy();
     const { password, new_password, user_id } = req.body;
     const missingFields = [];
     if (!password) missingFields.push("old password");
@@ -29,6 +41,31 @@ router.post("/change", async (req, res) => {
         .status(404)
         .json({ succuss: false, error_msg: "User not found." });
     } else {
+      let passwordError = "";
+      if (new_password.length < policy.minLength) {
+        passwordError = `Password must be at least ${policy.minLength} characters long.`;
+      } else if (policy.requireUppercase && !/[A-Z]/.test(new_password)) {
+        passwordError = "Password must contain at least one uppercase letter.";
+      } else if (policy.requireLowercase && !/[a-z]/.test(new_password)) {
+        passwordError = "Password must contain at least one lowercase letter.";
+      } else if (policy.requireNumbers && !/[0-9]/.test(new_password)) {
+        passwordError = "Password must contain at least one number.";
+      } else if (
+        policy.requireSpecialChars &&
+        !/[^a-zA-Z0-9]/.test(new_password)
+      ) {
+        passwordError = "Password must contain at least one special character.";
+      } else if (
+        policy.dictionaryBlocklist.some((bad) => new_password.includes(bad))
+      ) {
+        passwordError = "Password contains a blocked word or phrase.";
+      }
+      if (passwordError) {
+        return res.status(400).json({
+          success: false,
+          error: passwordError,
+        });
+      }
       const secretKey = process.env.SECRET_KEY;
       const hashedOldPassword = hashPassword(
         password,
@@ -50,7 +87,33 @@ router.post("/change", async (req, res) => {
           error_msg: "Current password and new password are the same.",
         });
       } else {
-        const result = await changePassword(user_id, hashedNewPassword, pool);
+        const historyCount = policy.historyCount;
+        const historyPasswords = await pool
+          .request()
+          .input("userId", sql.NVarChar, user_id).query(`
+            SELECT TOP ${historyCount} password_hash as password
+            FROM PasswordHistory
+            WHERE user_id = @userId
+            ORDER BY created_at DESC
+          `);
+        const isInHistory = historyPasswords.recordset.some(
+          (record) => record.password === hashedNewPassword
+        );
+        if (isInHistory) {
+          return res.status(400).json({
+            success: false,
+            error_msg:
+              "New password cannot be the same as the last " +
+              historyCount +
+              " passwords.",
+          });
+        }
+        const result = await changePassword(
+          user_id,
+          hashedNewPassword,
+          pool,
+          user[0]["salt"]
+        );
         if (result) {
           return res.status(200).json({ succuss: true });
         } else if (result === false) {
@@ -73,6 +136,7 @@ router.post("/change", async (req, res) => {
 });
 
 router.post("/reset", async (req, res) => {
+  const policy = getPasswordPolicy();
   const { new_password, user_id } = req.body;
   if (!new_password) {
     return res
@@ -97,6 +161,28 @@ router.post("/reset", async (req, res) => {
       .json({ success: false, error_msg: "User has not verified the code" });
   }
   const user = await validateUser(user_id, pool);
+  let passwordError = "";
+  if (new_password.length < policy.minLength) {
+    passwordError = `Password must be at least ${policy.minLength} characters long.`;
+  } else if (policy.requireUppercase && !/[A-Z]/.test(new_password)) {
+    passwordError = "Password must contain at least one uppercase letter.";
+  } else if (policy.requireLowercase && !/[a-z]/.test(new_password)) {
+    passwordError = "Password must contain at least one lowercase letter.";
+  } else if (policy.requireNumbers && !/[0-9]/.test(new_password)) {
+    passwordError = "Password must contain at least one number.";
+  } else if (policy.requireSpecialChars && !/[^a-zA-Z0-9]/.test(new_password)) {
+    passwordError = "Password must contain at least one special character.";
+  } else if (
+    policy.dictionaryBlocklist.some((bad) => new_password.includes(bad))
+  ) {
+    passwordError = "Password contains a blocked word or phrase.";
+  }
+  if (passwordError) {
+    return res.status(400).json({
+      success: false,
+      error: passwordError,
+    });
+  }
   const secretKey = process.env.SECRET_KEY;
   if (user === null) {
     return res
@@ -113,7 +199,35 @@ router.post("/reset", async (req, res) => {
     user[0]["salt"],
     secretKey
   );
-  const result = await changePassword(user_id, hashedNewPassword, pool);
+
+  const historyCount = policy.historyCount;
+  const historyPasswords = await pool
+    .request()
+    .input("userId", sql.NVarChar, user_id).query(`
+          SELECT TOP ${historyCount} password_hash as password
+          FROM PasswordHistory
+          WHERE user_id = @userId
+          ORDER BY created_at DESC
+        `);
+  const isInHistory = historyPasswords.recordset.some(
+    (record) => record.password === hashedNewPassword
+  );
+  if (isInHistory) {
+    return res.status(400).json({
+      success: false,
+      error_msg:
+        "New password cannot be the same as the last " +
+        historyCount +
+        " passwords.",
+    });
+  }
+
+  const result = await changePassword(
+    user_id,
+    hashedNewPassword,
+    pool,
+    user[0]["salt"]
+  );
   if (result) {
     return res.status(200).json({ succuss: true });
   } else if (result === false) {
@@ -146,7 +260,7 @@ async function isVerifiedCode(userId, pool) {
   }
 }
 
-async function changePassword(userId, newPassword, pool) {
+async function changePassword(userId, newPassword, pool, salt) {
   try {
     const result = await pool
       .request()
@@ -154,7 +268,15 @@ async function changePassword(userId, newPassword, pool) {
       .input("newPassword", sql.NVarChar, newPassword).query(`UPDATE Users
           SET password=@newPassword
           WHERE user_id=@userId`);
-    return result.rowsAffected[0] > 0;
+
+    const result2 = await pool
+      .request()
+      .input("userId", sql.NVarChar, userId)
+      .input("password_hash", sql.NVarChar, newPassword)
+      .input("salt", sql.NVarChar, salt)
+      .query(`INSERT INTO PasswordHistory (user_id, password_hash, salt)
+          VALUES (@userId, @password_hash, @salt)`);
+    return result.rowsAffected[0] > 0 && result2.rowsAffected[0] > 0;
   } catch (err) {
     console.log(err);
     return null;
