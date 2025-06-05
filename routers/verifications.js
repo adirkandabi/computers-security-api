@@ -112,18 +112,18 @@ router.post("/", async (req, res) => {
 async function verifyCode(userId, code, pool) {
   try {
     const result = await pool
-      .request()
-      .input("code", sql.NVarChar, code)
-      .input("userId", sql.NVarChar, userId).query(`
-          UPDATE VerificationCodes
-          SET is_used = 1,
-              verified_at = SYSDATETIMEOFFSET() AT TIME ZONE 'Israel Standard Time'
-          WHERE verification_code = @code
-            AND user_id = @userId
-            AND is_used = 0
-            AND SYSDATETIMEOFFSET() AT TIME ZONE 'Israel Standard Time'
-                <= expiration_time;
-  `);
+        .request()
+        .input("code", sql.NVarChar, code)
+        .input("userId", sql.NVarChar, userId).query(`
+        UPDATE TOP (1) VerificationCodes
+        SET is_used = 1,
+            verified_at = SYSDATETIMEOFFSET() AT TIME ZONE 'Israel Standard Time'
+        WHERE verification_code = @code
+          AND user_id = @userId
+          AND is_used = 0
+          AND SYSDATETIMEOFFSET() AT TIME ZONE 'Israel Standard Time' <= expiration_time
+        ORDER BY expiration_time DESC;
+      `);
     if (result.rowsAffected[0] === 1) {
       return true;
     } else {
