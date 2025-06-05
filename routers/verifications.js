@@ -111,8 +111,10 @@ router.post("/", async (req, res) => {
 
 async function verifyCode(userId, code, pool) {
   try {
-    const result = await pool.request().input("code", sql.NVarChar, code)
-        .query(`
+    const result = await pool
+        .request()
+        .input("code", sql.NVarChar, code)
+        .input("userId", sql.NVarChar, userId).query(`
         ;WITH LatestCode AS (
           SELECT TOP 1 *
           FROM VerificationCodes
