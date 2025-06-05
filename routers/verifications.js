@@ -115,19 +115,21 @@ async function verifyCode(userId, code, pool) {
         .request()
         .input("code", sql.NVarChar, code)
         .input("userId", sql.NVarChar, userId).query(`
-        ;WITH LatestCode AS (
-          SELECT TOP 1 *
-          FROM VerificationCodes
+                  ;WITH Latest AS (
+            SELECT TOP 1 verification_code
+            FROM VerificationCodes
+            WHERE user_id = @userId
+            ORDER BY created_at DESC
+          )
+          UPDATE VerificationCodes
+          SET is_used = 1,
+              verified_at = SYSDATETIMEOFFSET() AT TIME ZONE 'Israel Standard Time'
           WHERE verification_code = @code
             AND user_id = @userId
             AND is_used = 0
             AND SYSDATETIMEOFFSET() AT TIME ZONE 'Israel Standard Time' <= expiration_time
-          ORDER BY created_at DESC
-        )
-        UPDATE LatestCode
-        SET is_used = 1,
-            verified_at = SYSDATETIMEOFFSET() AT TIME ZONE 'Israel Standard Time';
-      `);
+            AND verification_code = (SELECT verification_code FROM Latest);
+           `);
     if (result.rowsAffected[0] === 1) {
       return true;
     } else {
